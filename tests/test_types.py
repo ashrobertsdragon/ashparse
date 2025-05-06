@@ -6,11 +6,11 @@ from ashparser.types_ import Argument
 class TestArgument:
     def test_argument_init_no_arguments(self):
         with pytest.raises(TypeError):
-            Argument()
+            Argument()  # type: ignore testing for missing arguments
 
     def test_argument_init_no_type(self):
         with pytest.raises(TypeError):
-            Argument("foo")
+            Argument("foo")  # type: ignore testing for missing arguments
 
     def test_argument_init(self):
         arg = Argument("foo", type=int)
@@ -80,7 +80,8 @@ class TestArgument:
 
     def test_argument_set_min_max(self):
         arg = Argument("foo", type=int, min=1, max=2)
-        assert arg._range == (1, 2)
+        assert arg._min == 1
+        assert arg._max == 2
         assert arg.choices == {1, 2}
 
     def test_argument_set_choices_and_min_max(self):
