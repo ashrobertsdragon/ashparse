@@ -21,8 +21,8 @@ class TestArgument:
         arg = Argument("foo", type=int)
         assert arg.alias is None
         assert arg.help is None
-        assert arg.metavar is None
-        assert arg.nargs is None
+        assert arg.descriptor is None
+        assert arg.num_args is None
         assert arg.required is False
         assert arg.choices is None
 
@@ -46,33 +46,33 @@ class TestArgument:
         arg = Argument("foo", type=int, help="bar")
         assert arg.help == "bar"
 
-    def test_argument_set_metavar(self):
-        arg = Argument("foo", type=int, metavar="bar")
-        assert arg.metavar == "bar"
+    def test_argument_set_descriptor(self):
+        arg = Argument("foo", type=int, descriptor="bar")
+        assert arg.descriptor == "bar"
 
-    def test_argument_set_nargs_plus(self):
-        arg = Argument("foo", type=int, nargs="+")
-        assert arg.nargs == "+"
-        assert arg._nargs == (1, float("inf"))
+    def test_argument_set_num_args_plus(self):
+        arg = Argument("foo", type=int, num_args="+")
+        assert arg.num_args == "+"
+        assert arg._num_args == (1, float("inf"))
 
-    def test_argument_set_nargs_question(self):
-        arg = Argument("foo", type=int, nargs="?")
-        assert arg.nargs == "?"
-        assert arg._nargs == (0, 1)
+    def test_argument_set_num_args_question(self):
+        arg = Argument("foo", type=int, num_args="?")
+        assert arg.num_args == "?"
+        assert arg._num_args == (0, 1)
 
-    def test_argument_set_nargs_star(self):
-        arg = Argument("foo", type=int, nargs="*")
-        assert arg.nargs == "*"
-        assert arg._nargs == (0, float("inf"))
+    def test_argument_set_num_args_star(self):
+        arg = Argument("foo", type=int, num_args="*")
+        assert arg.num_args == "*"
+        assert arg._num_args == (0, float("inf"))
 
-    def test_argument_set_nargs_int(self):
-        arg = Argument("foo", type=int, nargs=2)
-        assert arg.nargs == 2
-        assert arg._nargs == (2, 2)
+    def test_argument_set_num_args_int(self):
+        arg = Argument("foo", type=int, num_args=2)
+        assert arg.num_args == 2
+        assert arg._num_args == (2, 2)
 
-    def test_argument_nargs_not_set(self):
+    def test_argument_num_args_not_set(self):
         arg = Argument("foo", type=int)
-        assert arg._nargs == (1, 1)
+        assert arg._num_args == (1, 1)
 
     def test_argument_set_choices(self):
         arg = Argument("foo", type=int, choices=[1, 2, 3])
