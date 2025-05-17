@@ -46,6 +46,20 @@ class ArgumentTypeError(ArgumentError):
         super().__init__(self.msg)
 
 
+class ConditionalDependencyError(ArgumentError):
+    """Raised when a conditional dependency between arguments is violated."""
+
+    def __init__(self, arg_name: str, condition: str, relation: str):
+        self.arg_name = arg_name
+        self.condition = condition
+        self.relation = relation
+        msg = (
+            f"Argument '{arg_name}' {relation} based on "
+            f"condition involving '{condition}'"
+        )
+        super().__init__(msg)
+
+
 class MissingRequiredArgumentError(ArgumentError):
     """Raised when a required argument is not provided."""
 

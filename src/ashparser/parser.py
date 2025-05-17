@@ -5,7 +5,8 @@ from typing import Any, Literal
 
 from indexed_dict import IndexedDict
 
-from .types_ import (
+from ashparser import exceptions
+from ashparser.types_ import (
     Argument,
     AshParser,
     ConditionalType,
@@ -51,7 +52,6 @@ class Parser(AshParser):
         help: str | None = None,  # noqa: A002
         required: bool = False,
         show_help: bool = True,
-        child: bool = False,
     ) -> None:
         """Initialize the parser.
 
@@ -65,13 +65,9 @@ class Parser(AshParser):
                 Defaults to False.
             show_help (bool, optional): Whether to show help for the parser.
                 Defaults to True.
-            child (bool, optional): Whether the parser is a child parser.
-                Defaults to False for the root parser and set to True by the
-                method `_add_group()`.
         """
         super().__init__(name, alias=alias, help=help, required=required)
         self.show_help = show_help
-        self.child = child
 
         self.arguments: list[AshParser] = []
         self._recurring_groups: list[Parser] = []
@@ -91,9 +87,6 @@ class Parser(AshParser):
         self._positional_args: IndexedDict[str, Any] = IndexedDict()
         self._recurring_data: dict[str, list[dict[str, Any]]] = {}
         self._consumed_args: list[str] = []
-
-        if not self.child:
-            self.positional = False
 
     def add_argument(
         self,
@@ -173,9 +166,7 @@ class Parser(AshParser):
         required: bool = False,
         subtype: Enum | None = None,
     ) -> "Parser":
-        group = Parser(
-            name, alias=alias, help=help, required=required, child=True
-        )
+        group = Parser(name, alias=alias, help=help, required=required)
         _group = (subtype, group) if subtype else group
 
         self._groups[group_type].append(_group)
@@ -327,29 +318,57 @@ class Parser(AshParser):
             subtype=conditional_type,
         )
 
-    def _add_parser_args(
-        self,
-        parser: "Parser",
-    ) -> None:
-        for arg in parser.arguments:
-            if not arg.name.startswith("--"):
-                self._positional_args[arg.name] = arg
-            self._parser_args[arg.name] = arg
-            if arg.alias:
-                self._parser_args[arg.alias] = arg
-
     # Parser logic
     def parse(self) -> Names:
-        """Parse command line arguments.
+        """Parses command-line arguments into a typed `Names` object.
 
-        Raises:
-            ValueError: If any arguments are missing or invalid.
+        This method consumes arguments from `sys.argv[1:]` and:
+        - Matches tokens to expected arguments including positional, optional,
+            and recurring groups
+        - Applies argument validation rules (e.g. required, mutually exclusive,
+            and conditional)
+        - Converts argument values to the appropriate types
+        - Returns a structured, typed object with the parsed results
 
         Returns:
-            Names: Parsed command line arguments.
-        """
+            Names: A typed namespace containing all parsed argument values.
+                Each argument can be accessed via its name attribute
+                    (e.g. `args.input_file`) or dictionary-style
+                    (e.g. `args["input_file"]`).
+
+        Raises:
+            MissingRequiredArgumentError: If a required argument is
+                missing.
+            UnknownArgumentError: If an unexpected argument is
+                encountered.
+            MutuallyExclusiveArgumentError: If mutually exclusive
+                arguments are provided.
+            ConditionalArgumentError: If a conditional argument is
+                not provided.
+            InvalidValueError: If an argument has an invalid value.
+            ArgumentTypeError: If an argument has an invalid type.
+            InvalidChoiceError: If an argument has an invalid choice.
+            TooManyArgumentsError: If too many arguments are provided.
+            TooFewArgumentsError: If too few arguments are provided.
+
+        Notes:
+            - Recurring groups will be returned as a list of dictionaries.
+            - If an argument is not provided and has no default, it will not
+                appear in the result.
+            - Argument types are validated and converted before being stored.
+
+        Example:
+            >>> parser = Parser()
+            >>> parser.add_argument("input_file", type=str, required=True)
+            >>> parser.add_argument("--verbose", action="store_true")
+
+            >>> args = parser.parse()
+            >>> print(args.input_file)
+            >>> if args.verbose:
+            >>>    print("Verbose mode enabled.")
+        """  # noqa: DOC502
         tokens = sys.argv[1:]
-        result, _ = self._parse_arguments(self, tokens)
+        result, _ = self._parse_args(self, tokens)
 
         self._validate_mutually_exclusive_arguments(result)
         self._validate_conditional_arguments(result)
@@ -361,11 +380,11 @@ class Parser(AshParser):
             if arg.name in flattened:
                 self._namespace.values[arg.name] = flattened[arg.name]
             elif arg.required:
-                raise ValueError(f"Missing required argument: {arg.name}")
+                raise exceptions.MissingRequiredArgumentError(arg.name)
 
         return self._namespace
 
-    def _parse_argument(
+    def _consume_argument(
         self, i: int, arg: Argument, tokens: list[str]
     ) -> tuple[dict[str, Any], int]:
         values, i = self._collect_argument_values(i, arg, tokens, len(tokens))
@@ -375,78 +394,15 @@ class Parser(AshParser):
         self._validate_choices(arg, converted)
         return {arg.name: converted}, i
 
-    def _parse_group(
+    def _consume_group(
         self, arg: "Parser", i: int, tokens: list[str]
     ) -> tuple[dict[str, Any], int]:
-        group_result, i = self._parse_arguments(arg, tokens[i:])
+        group_result, i = self._parse_args(arg, tokens[i:])
 
         if arg.name in self._recurring_data:
             self._recurring_data[arg.name].append(group_result)
             return {}, i
         return {arg.name: group_result}, i
-
-    def _parse_tokens(
-        self, token: str, tokens: list[str], i: int, position: int
-    ) -> tuple[dict[str, Any], int]:
-        arg = self._parser_args[token]
-
-        if token not in self._recurring_data:
-            self._pop_arg(arg, token, position)
-
-        if isinstance(arg, Argument):
-            result, i = self._parse_argument(i, arg, tokens)
-        elif isinstance(arg, Parser):
-            result, i = self._parse_group(arg, i, tokens)
-        else:
-            raise NotImplementedError
-
-        return result, i
-
-    def _parse_arguments(
-        self, parser: "Parser", tokens: list[str], i: int = 0
-    ) -> tuple[dict[str, Any], int]:
-        self._recurring_data.update({
-            g.name: [] for g in parser._recurring_groups
-        })
-        result: dict[str, Any] = {}
-        position = 0
-        total = len(tokens)
-
-        while i < total:
-            token = tokens[i]
-            last_consumed = (
-                self._consumed_args[-1]
-                if self._consumed_args
-                else self._parser_args.get_key_from_index(0)
-            )
-            next_positional = self._positional_args.get_key_from_index(position)
-
-            if token in self._parser_args:
-                last_consumed = token
-                self._consumed_args.append(token)
-            elif self._parser_args.position(
-                last_consumed
-            ) > self._parser_args.position(next_positional):
-                raise ValueError(f"Unknown argument: {token}")
-
-            i += 1
-            results, i = self._parse_tokens(token, tokens, i, position)
-            result.update(results)
-            position += 1
-
-            for name, group in self._recurring_data.items():
-                result[name] = group
-
-        return result, i
-
-    def _pop_arg(self, arg: AshParser, token: str, position: int) -> None:
-        if token.startswith("-"):
-            self._consumed_args.append(arg.name)
-            if token == arg.alias:
-                self._parser_args.pop(arg.name)
-            self._parser_args.pop(token)
-        else:
-            self._parser_args.pop_from_index(position)
 
     def _collect_argument_values(
         self,
@@ -493,27 +449,103 @@ class Parser(AshParser):
                 flat_result[name] = value
         return flat_result
 
+    def _index_parser_args(
+        self,
+        parser: "Parser",
+    ) -> None:
+        for arg in parser.arguments:
+            if not arg.name.startswith("--"):
+                self._positional_args[arg.name] = arg
+            self._parser_args[arg.name] = arg
+            if arg.alias:
+                self._parser_args[arg.alias] = arg
+
+    def _parse_args(
+        self, parser: "Parser", tokens: list[str], i: int = 0
+    ) -> tuple[dict[str, Any], int]:
+        self._index_parser_args(parser)
+        self._recurring_data.update({
+            g.name: [] for g in parser._recurring_groups
+        })
+        result: dict[str, Any] = {}
+        position = 0
+        total = len(tokens)
+
+        while i < total:
+            token = tokens[i]
+            last_consumed = (
+                self._consumed_args[-1]
+                if self._consumed_args
+                else self._parser_args.get_key_from_index(0)
+            )
+            next_positional = self._positional_args.get_key_from_index(position)
+
+            if token in self._parser_args:
+                last_consumed = token
+                self._consumed_args.append(token)
+            elif self._parser_args.position(
+                last_consumed
+            ) > self._parser_args.position(next_positional):
+                raise exceptions.UnknownArgumentError(token)
+
+            i += 1
+            results, i = self._parse_tokens(token, tokens, i, position)
+            result.update(results)
+            position += 1
+
+            for name, group in self._recurring_data.items():
+                result[name] = group
+
+        return result, i
+
+    def _parse_tokens(
+        self, token: str, tokens: list[str], i: int, position: int
+    ) -> tuple[dict[str, Any], int]:
+        arg = self._parser_args[token]
+
+        if token not in self._recurring_data:
+            self._pop_consumed_arg(arg, token, position)
+
+        if isinstance(arg, Argument):
+            result, i = self._consume_argument(i, arg, tokens)
+        elif isinstance(arg, Parser):
+            result, i = self._consume_group(arg, i, tokens)
+        else:
+            raise NotImplementedError
+
+        return result, i
+
+    def _pop_consumed_arg(
+        self, arg: AshParser, token: str, position: int
+    ) -> None:
+        if token.startswith("-"):
+            self._consumed_args.append(arg.name)
+            if token == arg.alias:
+                self._parser_args.pop(arg.name)
+            self._parser_args.pop(token)
+        else:
+            self._parser_args.pop_from_index(position)
+
     def _validate_choices(self, arg: Argument, converted: list[Any]) -> None:
         if arg.choices and (invalid := set(converted) - set(arg.choices)):
-            raise ValueError(
-                f"Invalid values for {arg.name}: "
-                f"{', '.join(map(str, invalid))} not in {arg.choices}"
+            raise exceptions.InvalidChoiceError(
+                arg.name, invalid, list(arg.choices)
             )
 
     def _validate_argument_count(
         self, arg: Argument, values: list[str]
     ) -> None:
         min_n, max_n = arg.num_args
-        if not min_n <= len(values) <= max_n:
-            raise ValueError(
-                f"Argument {arg.name} expected {min_n} to {max_n} values, "
-                f"got {len(values)}"
-            )
+        actual_n = len(values)
+        if actual_n < min_n:
+            raise exceptions.TooFewArgumentsError(arg.name, min_n, actual_n)
+        if actual_n > max_n:
+            raise exceptions.TooManyArgumentsError(arg.name, max_n, actual_n)
 
     def _validate_required_arguments(self, result: dict[str, Any]) -> None:
         for arg in self.arguments:
             if arg.required and arg.name not in result:
-                raise ValueError(f"Missing required argument: {arg.name}")
+                raise exceptions.MissingRequiredArgumentError(arg.name)
 
     def _validate_mutually_exclusive_arguments(
         self, result: dict[str, Any]
@@ -521,28 +553,54 @@ class Parser(AshParser):
         for group in self._mutually_exclusive_groups:
             used = [arg.name for arg in group.arguments if arg in result]
             if len(used) > 1:
-                raise ValueError(
-                    f"Mutually exclusive arguments used: {', '.join(used)}"
-                )
+                raise exceptions.MutuallyExclusiveArgumentsError(used)
 
     def _validate_conditional_arguments(self, result: dict[str, Any]) -> None:
+        # sourcery skip: raise-from-previous-error
         for group, ctype in self._conditional_groups:
             conditional = group.arguments[0]
             cond_present = conditional in result
             dependents = group.arguments[1:]
             for dep in dependents:
                 dep_present = dep in result
-                if ctype == ConditionalType.FIRST_PRESENT_REST_REQUIRED:
-                    if cond_present and not dep_present:
-                        raise ValueError(
-                            f"{dep} is required when {conditional} is used"
-                        )
-                elif ctype == ConditionalType.FIRST_ABSENT_REST_FORBIDDEN:
-                    if not cond_present and dep_present:
-                        raise ValueError(
-                            f"{dep} cannot be used when {conditional} "
-                            "is not present"
-                        )
+                validator_name = f"_validate_{ctype.value.lower()}"
+                try:
+                    validator = getattr(self, validator_name)
+                except AttributeError:
+                    raise NotImplementedError(
+                        "No validator implemented for conditional type "
+                        f"'{ctype.value}'"
+                    )
+
+                validator(conditional, dep, cond_present, dep_present)
+
+    @staticmethod
+    def _validate_first_present_rest_required(
+        conditional: AshParser,
+        dep: AshParser,
+        cond_present: bool,
+        dep_present: bool,
+    ) -> None:
+        if cond_present and not dep_present:
+            raise exceptions.ConditionalDependencyError(
+                arg_name=dep.name,
+                condition=conditional.name,
+                relation="is required when",
+            )
+
+    @staticmethod
+    def _validate_first_absent_rest_forbidden(
+        conditional: AshParser,
+        dep: AshParser,
+        cond_present: bool,
+        dep_present: bool,
+    ) -> None:
+        if not cond_present and dep_present:
+            raise exceptions.ConditionalDependencyError(
+                arg_name=dep.name,
+                condition=conditional.name,
+                relation="is forbidden when",
+            )
 
     # Help generation
     def _format_help(self, indent: int = 0) -> str:
