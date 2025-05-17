@@ -1,11 +1,5 @@
 [project]
-name = "ashparser"
-version = "0.1.0"
-description = "A CLI argument parser that supports an assortment of argument groups, typing, and better help"
-readme = "README.md"
 authors = [{ name = "Ashlynn Antrobus", email = "ashlynn@prosepal.io" }]
-license = { text = "MIT" }
-keywords = ["cli", "parser", "argument parser"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Environment :: Console",
@@ -14,36 +8,58 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
-    "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: User Interfaces",
     "Topic :: Utilities",
     "Typing :: Typed",
 ]
+dependencies = ["indexed-dict>=0.1.0"]
+description = "A CLI argument parser that supports an assortment of argument groups, typing, and better help"
+keywords = ["argument parser", "cli", "parser"]
+license = { text = "MIT" }
+name = "ashparser"
+readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+version = "0.1.0"
 
 [dependency-groups]
-testing = ["pytest>=8.3.5", "pytest-cov>=6.1.1"]
+testing = ["pytest-cov>=6.1.1", "pytest>=8.3.5"]
 
 [build-system]
-requires = ["hatchling"]
 build-backend = "hatchling.build"
+requires = ["hatchling"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+addopts = ["--cov=src --cov-fail-under=80"]
 pythonpath = ["src"]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 80
 target-version = "py311"
 
-[tool.ruff.lint.pydoclint]
-ignore-one-line-docstrings = true
+[tool.ruff.lint]
+ignore = ["A002", "ANN204", "ANN401", "D100", "D417"]
+select = ["A", "ANN", "D", "DOC", "E", "F", "I", "N", "UP"]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+mypy-init-return = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+ignore-decorators = ["typing.overload"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/{tests,docs,tools}/*" = ["ANN201", "D", "E402"]
+"__init__.py" = ["E402"]
+"src/ashparser/exceptions.py" = ["ANN401", "D107"]
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"

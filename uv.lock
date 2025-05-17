@@ -6,6 +6,9 @@ requires-python = ">=3.11"
 name = "ashparser"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "indexed-dict" },
+]
 
 [package.dev-dependencies]
 testing = [
@@ -14,6 +17,7 @@ testing = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "indexed-dict", specifier = ">=0.1.0" }]
 
 [package.metadata.requires-dev]
 testing = [
@@ -83,6 +87,15 @@ wheels = [
 [package.optional-dependencies]
 toml = [
     { name = "tomli", marker = "python_full_version <= '3.11'" },
+]
+
+[[package]]
+name = "indexed-dict"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/d1/a1fbe76ce86a145182b0810fb4239faafa07ea18a3409d85052cbdb56a44/indexed_dict-0.1.0.tar.gz", hash = "sha256:ffd2e5805be562d8a62bb22762bbb05290d2a2a4a36b45737f8a7eaf9b904048", size = 28758, upload-time = "2025-05-17T13:45:00.594Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/35/10/4ace451ba35f5a7faef1c38ac9384466c78101e8b4a7a82ced5da22494d0/indexed_dict-0.1.0-py3-none-any.whl", hash = "sha256:1730d8864634f3080c7452d75effedbade71a65b4fc0926927f9e0e7b0e7c110", size = 7605, upload-time = "2025-05-17T13:44:59.283Z" },
 ]
 
 [[package]]
