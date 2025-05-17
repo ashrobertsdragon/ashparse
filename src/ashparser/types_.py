@@ -140,7 +140,7 @@ class Argument(AshParser):
         self.choices = choices
         self._min = min
         self._max = max
-        self.num_args: tuple[int, int | float] = (1, 1)
+        self.num_args: tuple[int, int] = (1, 1)
 
         self._post_init()
 
@@ -212,8 +212,8 @@ class Argument(AshParser):
     def _parse_num_args(self, num_args_value: str) -> None:
         """Helper to parse the `num_args` attribute."""
         num_args_map = {
-            "*": (0, float("inf")),
-            "+": (1, float("inf")),
+            "*": (0, sys.maxsize),
+            "+": (1, sys.maxsize),
             "?": (0, 1),
         }
         self.num_args = num_args_map[num_args_value]
