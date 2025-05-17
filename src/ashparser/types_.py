@@ -1,8 +1,8 @@
 import sys
 from abc import ABC
-from collections.abc import Iterator, Sequence, KeysView, ItemsView, ValuesView
+from collections.abc import Sequence
 from enum import StrEnum, auto
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Literal
 
 from . import exceptions
 
@@ -11,16 +11,19 @@ __all__ = [
     "Argument",
     "Names",
     "ConditionalType",
-    "IndexedDict",
 ]
 
 
 class ConditionalType(StrEnum):
+    """Enum to represent the type of a conditional argument group."""
+
     FIRST_PRESENT_REST_REQUIRED = auto()
     FIRST_ABSENT_REST_FORBIDDEN = auto()
 
 
 class AshParser(ABC):
+    """Base class for Argument and Parser."""
+
     def __init__(
         self,
         name: str,
@@ -29,15 +32,41 @@ class AshParser(ABC):
         help: str | None = None,
         required: bool = False,
     ) -> None:
+        """Initialize the parser.
+
+        Args:
+            name (str): Name of the parser.
+            alias (str | None, optional): Alias for the parser.
+                Defaults to None.
+            help (str | None, optional): Help text for the parser.
+                Defaults to None.
+            required (bool, optional): Whether the parser is required.
+                Defaults to False.
+        """
         self.name = name
         self.alias = alias
         self.help = help
         self.type = type(self)
-        self.required = False
+        self.required = required
+        self.positional: bool = False
 
+        self._post_init()
         self.validate_alias()
 
+    def _post_init(self) -> None:
+        if not self.name.startswith("--"):
+            self.positional = True
+
     def validate_alias(self) -> None:
+        """Validate the alias.
+
+        This method checks if the alias is valid and raises an exception if not.
+        It probably does not need to be called except by the constructor but
+        is public in case there is a use for it by the user.
+
+        Raises:
+            exceptions.InvalidAliasError: If the alias is invalid.
+        """
         if self.alias is not None:
             if (
                 len(self.alias) > 2
@@ -52,8 +81,7 @@ class AshParser(ABC):
 
 
 class Argument(AshParser):
-    """
-    Represents a command-line argument for the parser.
+    """Represents a command-line argument for the parser.
 
     Argument defines the properties and constraints for a single command-line
     argument, including its type, default value, allowed choices, and other
@@ -75,6 +103,34 @@ class Argument(AshParser):
         min: int | None = None,
         max: int | None = None,
     ) -> None:
+        """Initialize the argument.
+
+        An Argument is a class that represents a single command-line argument.
+        It has properties such as type, default value, allowed choices, and
+        other validation rules.
+
+        Args:
+            name (str): Name of the argument.
+            type (type): Type of the argument.
+            alias (str | None, optional): Alias for the argument.
+                Defaults to None.
+            help (str | None, optional): Help text for the argument.
+                Defaults to None.
+            default (Any, optional): Default value for the argument.
+                Defaults to None.
+            descriptor (str | None, optional): Descriptor for the argument.
+                Defaults to None.
+            num_args (Literal["?", "*", "+"] | int | None, optional): Number of
+                arguments for the argument. Defaults to None.
+            required (bool, optional): Whether the argument is required.
+                Defaults to False.
+            choices (Sequence[Any] | None, optional): Allowed choices for the
+                argument. Defaults to None.
+            min (int | None, optional): Minimum value for the argument.
+                Defaults to None.
+            max (int | None, optional): Maximum value for the argument.
+                Defaults to None.
+        """
         super().__init__(name, alias=alias, help=help)
         self.type = type
         self.default = default
@@ -89,20 +145,26 @@ class Argument(AshParser):
         self._post_init()
 
     def _post_init(self) -> None:
-        """
-        Post-initialization method to set up argument attributes.
+        """Post-initialization method to set up argument attributes.
 
         This method processes the `num_args`, `choices`, and `_range` attributes
-        of the Argument class. It validates and converts the `num_args` attribute
-        to a tuple indicating the allowed number of arguments. If `num_args` is
-        a special character ("*", "+", "?"), it uses `_parse_num_args`. For
-        integer `num_args`, it ensures non-negativity.
+        of the Argument class. It validates and converts the `num_args`
+        attribute to a tuple indicating the allowed number of arguments. If
+        `num_args` is a special character ("*", "+", "?"), it uses
+        `_parse_num_args`. For integer `num_args`, it ensures non-negativity.
 
         If `choices` are provided, they are converted to a set. If both
         `choices` and a valid numeric `_range` are present, an exception is
         raised, since these options are mutually exclusive.
-        """
 
+        Raises:
+            ArgumentError: When an argument is invalid.
+            ArgumentTypeError: If `num_args` is not a valid type.
+            InvalidValueError: If `num_args` is negative.
+            ArgumentError: If both `required` and `default` are specified.
+            MutuallyExclusiveArgumentsError: If both `choices` and `_range`
+                are specified.
+        """
         if self._num_args is None:
             self.num_args = (1, 1)
         elif self._num_args in ("*", "+", "?"):
@@ -137,10 +199,15 @@ class Argument(AshParser):
             if self._min > self._max:
                 raise exceptions.ArgumentError("Min must be less than max")
             if self.choices is not None:
-                raise exceptions.MutuallyExclusiveArgumentsError(
-                    ["range", "choices"]
-                )
+                raise exceptions.MutuallyExclusiveArgumentsError([
+                    "range",
+                    "choices",
+                ])
             self.choices = set(range(self._min, self._max + 1))
+        if self.name.startswith("-") and not self.name.startswith("--"):
+            raise exceptions.ArgumentError(
+                "Argument names must start with two or zero dashes"
+            )
 
     def _parse_num_args(self, num_args_value: str) -> None:
         """Helper to parse the `num_args` attribute."""
@@ -149,47 +216,83 @@ class Argument(AshParser):
             "+": (1, float("inf")),
             "?": (0, 1),
         }
-        self._num_args = num_args_map[num_args_value]
+        self.num_args = num_args_map[num_args_value]
 
 
 class Names:
-    """
-    Stores and manages argument values and their types.
+    """Stores and manages argument values and their types.
 
     Names provides attribute and item access to argument values, and enforces
     type checking for assignments.
     """
 
     def __init__(self):
-        self.values: dict[str, Any] = {}
+        """Initializes a new instance of the Names class."""
+        self._values: dict[str, Any] = {}
         self._types: dict[str, type] = {}
 
     def __getattr__(self, key: str) -> Any:
+        """Returns the value of an argument.
+
+        Args:
+            key (str): The name of the argument.
+
+        Returns:
+            Any: The value of the argument.
+
+        Raises:
+            AttributeError: If the argument is not found.
+        """
         try:
-            return self.values[key]
+            return self._values[key]
         except KeyError as e:
             raise AttributeError(f"No such argument: {key}") from e
 
     def __getitem__(self, key: str) -> Any:
-        value = self.values[key]
+        """Returns the value of an argument.
+
+        Args:
+            key (str): The name of the argument.
+
+        Returns:
+            Any: The value of the argument.
+
+        Raises:
+            ArgumentTypeError: If the argument has the wrong type.
+            KeyError: If the argument is not found.
+        """  # noqa: DOC502
+        # A KeyError can be raised here even if it is not done explicitly
+        value = self._values[key]
         if key in self._types and not isinstance(value, self._types[key]):
             raise exceptions.ArgumentTypeError(
                 value,
                 self._types[key],
-                f"Expected {key} to be {self._types[key].__name__}, got {type(value).__name__}",
+                f"Expected {key} to be {self._types[key].__name__}, "
+                f"got {type(value).__name__}",
             )
         return value
 
     def __setitem__(self, key: str, value: Any):
+        """Sets the value of an argument.
+
+        Args:
+            key (str): The name of the argument.
+            value (Any): The value to set.
+
+        Raises:
+            ArgumentTypeError: If the argument has the wrong type.
+        """
         if key in self._types and not isinstance(value, self._types[key]):
             raise exceptions.ArgumentTypeError(
                 value,
                 self._types[key],
-                f"Expected {key} to be {self._types[key].__name__}, got {type(value).__name__}",
+                f"Expected {key} to be {self._types[key].__name__}, "
+                f"got {type(value).__name__}",
             )
-        self.values[key] = value
+        self._values[key] = value
 
     def __repr__(self) -> str:
+        """Returns a string representation of the arguments."""
         args: dict[str, dict[str, Any]] = {
             name: {"value": value, "type": typ.__name__}
             for (name, value), typ in zip(
@@ -198,90 +301,16 @@ class Names:
         }
         return f"<Args {args}>"
 
-    def set_type(self, name: str, typ: type):
-        self._types[name] = typ
-
-
-K = TypeVar("K")
-V = TypeVar("V")
-
-
-class IndexedDict(Generic[K, V]):
-    """
-    A dictionary that preserves insertion order and allows index-based access.
-
-    IndexedDict provides both key-based and index-based operations, making it
-    useful for scenarios where order matters and fast lookups are required.
-    """
-
-    def __init__(self) -> None:
-        self._index: list[K] = []
-        self._dict: dict[K, V] = {}
-
-    def __setitem__(self, key: K, value: V) -> None:
-        if key not in self._dict:
-            self._index.append(key)
-        self._dict[key] = value
-
-    def __getitem__(self, key: K) -> V:
-        return self._dict[key]
-
-    def __delitem__(self, key: K) -> None:
-        self._index.remove(key)
-        del self._dict[key]
-
-    def __len__(self) -> int:
-        return len(self._index)
-
-    def __iter__(self) -> Iterator[V]:
-        for key in self._index:
-            yield self._dict[key]
-
-    def __repr__(self) -> str:
-        return f"<IndexedDict {self._dict}>"
-
     def __str__(self) -> str:
-        return str(self._dict)
+        """Returns a string representation of the arguments."""
+        args: dict[str, dict[str, Any]] = {
+            name: {"value": value, "type": typ.__name__}
+            for (name, value), typ in zip(
+                self._values.items(), self._types.values()
+            )
+        }
+        return str(args)
 
-    def __contains__(self, key: K) -> bool:
-        return key in self._dict
-
-    def __bool__(self) -> bool:
-        return bool(self._dict)
-
-    def __reversed__(self) -> Iterator[K]:
-        return reversed(self._index)
-
-    def enumerated(self) -> Iterator[tuple[int, K, V]]:
-        for key in self._index:
-            yield self.position(key), key, self._dict[key]
-
-    def items(self) -> ItemsView[K, V]:
-        return self._dict.items()
-
-    def values(self) -> ValuesView[V]:
-        return self._dict.values()
-
-    def keys(self) -> KeysView[K]:
-        return self._dict.keys()
-
-    def get(self, key: K, default=None) -> V | None:
-        return self._dict.get(key, default)
-
-    def position(self, key: K) -> int:
-        return self._index.index(key)
-
-    def get_from_index(self, index: int) -> V:
-        return self._dict[self._index[index]]
-
-    def pop(self, key: K, default: Any = None) -> Any:
-        if key in self._index:
-            self._index.remove(key)
-        return self._dict.pop(key, default)
-
-    def pop_from_index(self, index: int) -> V:
-        return self._dict.pop(self._index[index])
-
-    def clear(self) -> None:
-        self._index.clear()
-        self._dict.clear()
+    def set_type(self, name: str, typ: type) -> None:
+        """Set the type of an argument."""
+        self._types[name] = typ

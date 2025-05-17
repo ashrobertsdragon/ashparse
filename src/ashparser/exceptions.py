@@ -34,11 +34,9 @@ class ArgumentError(Exception):
 
 
 class ArgumentTypeError(ArgumentError):
-    """Raised when an argument value cannot be converted to the expected type."""
+    """Raised when an argument value can't be converted to expected type."""
 
-    def __init__(
-        self, value: Any, expected_type: type, msg: str | None = None
-    ):
+    def __init__(self, value: Any, expected_type: type, msg: str | None = None):
         self.value = value
         self.expected_type = expected_type
 
@@ -75,7 +73,10 @@ class InvalidChoiceError(ArgumentError):
         self.arg_name = arg_name
 
         choices_str = ", ".join(repr(c) for c in choices)
-        msg = f"Invalid choice: '{value}' for '{arg_name}'. (choose from {choices_str})"
+        msg = (
+            f"Invalid choice: '{value}' for '{arg_name}'. "
+            f"(choose from {choices_str})"
+        )
         super().__init__(msg)
 
 
@@ -84,7 +85,10 @@ class MutuallyExclusiveArgumentsError(ArgumentError):
 
     def __init__(self, arg_names: list[str]):
         self.arg_names = arg_names
-        msg = f"Arguments {', '.join(repr(a) for a in arg_names)} are mutually exclusive"
+        msg = (
+            f"Arguments {', '.join(repr(a) for a in arg_names)} "
+            "are mutually exclusive"
+        )
         super().__init__(msg)
 
 
@@ -125,7 +129,10 @@ class TooFewArgumentsError(ArgumentError):
         self.arg_name = arg_name
         self.min_expected = min_expected
         self.received = received
-        msg = f"Too few arguments for '{arg_name}': expected at least {min_expected}, got {received}"
+        msg = (
+            f"Too few arguments for '{arg_name}': "
+            f"expected at least {min_expected}, got {received}"
+        )
         super().__init__(msg)
 
 
@@ -136,5 +143,8 @@ class TooManyArgumentsError(ArgumentError):
         self.arg_name = arg_name
         self.max_expected = max_expected
         self.received = received
-        msg = f"Too many arguments for '{arg_name}': expected at most {max_expected}, got {received}"
+        msg = (
+            f"Too many arguments for '{arg_name}': "
+            f"expected at most {max_expected}, got {received}"
+        )
         super().__init__(msg)
