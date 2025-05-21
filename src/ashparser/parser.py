@@ -6,6 +6,7 @@ from typing import Any, Literal
 from indexed_dict import IndexedDict
 
 from ashparser import exceptions
+from ashparser.help_formatter import HelpFormatter
 from ashparser.types_ import (
     Argument,
     AshParser,
@@ -41,8 +42,8 @@ class Parser(AshParser):
         >>> parser = Parser("my_parser")
         >>> parser.add_argument("arg1", type=str)
         >>> parser.add_argument("arg2", type=int)
-        >>> parser.parse()
-        {'arg1': {None: str}, 'arg2': {None: int}}
+        >>> parser.parse(["apple", "2"])  # simulate command line with list
+        {'arg1': {"apple": str}, 'arg2': {2: int}}
     """
 
     def __init__(
@@ -63,8 +64,8 @@ class Parser(AshParser):
                 Defaults to None.
             required (bool, optional): Whether the parser is required.
                 Defaults to False.
-            show_help (bool, optional): Whether to show help for the parser.
-                Defaults to True.
+            show_help (bool, optional): Whether to pass the help for the parser
+                up to the parent. Defaults to True.
         """
         super().__init__(name, alias=alias, help=help, required=required)
         self.show_help = show_help
@@ -81,6 +82,8 @@ class Parser(AshParser):
             "mutually_exclusive_group": self._mutually_exclusive_groups,
             "conditional_group": self._conditional_groups,
         }
+
+        self._groups_by_type: dict[Parser, str] = {}
 
         self._namespace = Names()
         self._parser_args: IndexedDict[str, Any] = IndexedDict()
@@ -167,10 +170,12 @@ class Parser(AshParser):
         subtype: Enum | None = None,
     ) -> "Parser":
         group = Parser(name, alias=alias, help=help, required=required)
-        _group = (subtype, group) if subtype else group
+        _group = (group, subtype) if subtype else group
 
         self._groups[group_type].append(_group)
         self.arguments.append(group)
+        self._groups_by_type[group] = group_type
+
         arg_values: list[Any] = []
         arg_types: list[type] = []
         for arg in group.arguments:
@@ -179,7 +184,7 @@ class Parser(AshParser):
                 self._namespace[arg.name] = value
                 arg_values.append(value)
 
-            arg_type = getattr(arg, "type", str)
+            arg_type: type = getattr(arg, "type", str)
             self._namespace.set_type(arg.name, arg_type)
             arg_types.append(arg_type)
 
@@ -563,7 +568,7 @@ class Parser(AshParser):
             dependents = group.arguments[1:]
             for dep in dependents:
                 dep_present = dep in result
-                validator_name = f"_validate_{ctype.value.lower()}"
+                validator_name = f"_validate_{ctype.value}"
                 try:
                     validator = getattr(self, validator_name)
                 except AttributeError:
@@ -603,73 +608,7 @@ class Parser(AshParser):
             )
 
     # Help generation
-    def _format_help(self, indent: int = 0) -> str:
-        lines = []
-        if not self.show_help:
-            return ""
-
-        pad = "  " * indent
-
-        for arg in self.arguments:
-            name = f"{arg.alias}, {arg.name}" if arg.alias else arg.name
-            details = f"{pad}{name}: {arg.help}"
-            if arg.required:
-                details += " (required)"
-            if isinstance(arg, Argument) and arg.choices:
-                details += f" Choices: {', '.join(str(c) for c in arg.choices)}"
-            lines.append(details)
-
-        for ex_group in self._mutually_exclusive_groups:
-            items = " | ".join(arg.name for arg in ex_group.arguments)
-            lines.append(f"{pad}({items})")
-
-        for c_group, ctype in self._conditional_groups:
-            symbol = {
-                ConditionalType.FIRST_PRESENT_REST_REQUIRED: "&",
-                ConditionalType.FIRST_ABSENT_REST_FORBIDDEN: "&|",
-            }[ctype]
-            parts = f" {symbol} ".join(arg.name for arg in c_group.arguments)
-            lines.append(f"{pad}({parts})")
-
-        for parser in self._argument_groups + self._recurring_groups:
-            lines.extend((
-                f"{pad}{parser.alias}, {parser.name}: {parser.help}",
-                self._format_help(indent + 1),
-            ))
-        return "\n".join(line for line in lines if line)
-
-    def _format_usage(self) -> str:
-        tokens: list[str] = []
-
-        for arg in self.arguments:
-            token = f"<{arg.name}>" if arg.required else f"[{arg.name}]"
-            tokens.append(token)
-
-        tokens.extend(
-            f"({group.alias} <{group.name}>)" for group in self._argument_groups
-        )
-        tokens.extend(
-            f"[{r_group.alias} <{r_group.name}...>]"
-            for r_group in self._recurring_groups
-        )
-        for ex_group in self._mutually_exclusive_groups:
-            token = " | ".join(arg.name for arg in ex_group.arguments)
-            tokens.append(f"[{token}]")
-
-        for c_group, ctype in self._conditional_groups:
-            symbol = {
-                ConditionalType.FIRST_PRESENT_REST_REQUIRED: "&",
-                ConditionalType.FIRST_ABSENT_REST_FORBIDDEN: "&|",
-            }[ctype]
-            tokens.append(
-                f"({' '.join(arg.name for arg in c_group.arguments[:1])} "
-                f"{symbol} "
-                f"{' '.join(arg.name for arg in c_group.arguments[1:])})"
-            )
-
-        return f"Usage: {self.name} " + " ".join(tokens) + "\n"
-
-    def print_help(self) -> None:
-        """Print help message."""
-        print(self._format_usage())
-        print(self._format_help())
+    def print_help(self, help_formatter: type[HelpFormatter]) -> None:
+        """Print the help text for the parser."""
+        formatter = help_formatter(self)
+        print(formatter.format_help())

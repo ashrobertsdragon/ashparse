@@ -20,6 +20,14 @@ class ConditionalType(StrEnum):
     FIRST_PRESENT_REST_REQUIRED = auto()
     FIRST_ABSENT_REST_FORBIDDEN = auto()
 
+    @property
+    def symbol(self) -> str:
+        """Get the symbol for the conditional type."""
+        return {
+            ConditionalType.FIRST_PRESENT_REST_REQUIRED: "&",
+            ConditionalType.FIRST_ABSENT_REST_FORBIDDEN: "&|",
+        }[self]
+
 
 class AshParser(ABC):
     """Base class for Argument and Parser."""
@@ -48,14 +56,8 @@ class AshParser(ABC):
         self.help = help
         self.type = type(self)
         self.required = required
-        self.positional: bool = False
 
-        self._post_init()
         self.validate_alias()
-
-    def _post_init(self) -> None:
-        if not self.name.startswith("--"):
-            self.positional = True
 
     def validate_alias(self) -> None:
         """Validate the alias.
@@ -68,13 +70,17 @@ class AshParser(ABC):
             exceptions.InvalidAliasError: If the alias is invalid.
         """
         if self.alias is not None:
+            if not self.name.startswith("-"):
+                raise exceptions.InvalidAliasError(
+                    self.alias, "positional arguments cannot have aliases"
+                )
             if (
                 len(self.alias) > 2
                 or (len(self.alias) == 2 and self.alias[0] != "-")
                 or not self.alias[-1].isalpha()
             ):
                 raise exceptions.InvalidAliasError(
-                    f"Invalid alias: {self.alias}"
+                    self.alias, "must be a single character"
                 )
             if len(self.alias) == 1:
                 self.alias = f"-{self.alias}"
