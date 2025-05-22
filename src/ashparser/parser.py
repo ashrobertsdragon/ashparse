@@ -22,10 +22,38 @@ class Parser(AddMixin):
 
     The AshParser command line argument parser is inspired by Python's argparse,
     but with typing and better argument group support.
+
+    Methods:
+        add_argument: Add an argument to the argument group.
+        add_argument_group: Add an argument group to the argument group as a
+            nested group.
+        add_recurring_group: Add an argument group that can be used multiple
+            times to the argument group.
+        add_mutually_exclusive_group: Add a group of mutually exclusive
+            arguments to the argument group.
+        add_conditional_group: Add an argument group to the argument group where
+            arguments can be conditionally required.
+        parse: Parse the command line arguments and return the namespace.
+
+    Example:
+        >>> parser = Parser("example")
+        >>> parser.add_argument("input", type=str)
+        >>> parser.add_argument("count", type=int, default=1)
+        >>> args = parser.parse(["file.txt"])
+        >>> print(args)
+        {
+            "input": {"value": "file.txt", "type": str},
+            "count": {"value": 1, "type": int}
+        }
     """
 
     def __init__(self, name: str = "", help: str | None = None) -> None:
-        """Initialize a new Parser instance."""
+        """Initialize a new Parser instance.
+
+        Args:
+            name (str): Name of the parser (used for internal grouping).
+            help (str | None): Optional help description.
+        """
         self._namespace = Names()
         self._root_group = ArgumentGroup(
             namespace=self._namespace, name=name, help=help
@@ -64,7 +92,12 @@ class Parser(AddMixin):
             descriptor (str | None, optional): Descriptor for the argument.
                 Defaults to None.
             num_args (Literal["?", "*", "+"] | int | None, optional):
-                Number of arguments for the argument. Defaults to None.
+                Specifies how many values are expected:
+                    - '?' = zero or one
+                    - '*' = zero or more
+                    - '+' = one or more
+                    - int = exactly that many
+                    - None = exactly one (default behavior)
             required (bool, optional): Whether the argument is required.
                 Defaults to False.
             choices (Sequence[Any] | None, optional): Choices for the argument.
@@ -76,15 +109,37 @@ class Parser(AddMixin):
 
         Example:
             >>> parser = Parser("my_parser")
-            >>> parser.add_argument("arg1", type=str)
+            >>> parser.add_argument("--arg1", type=str)
             >>> parser.add_argument(
-            ...     "arg2", type=int, help="Help text for arg2", required=True
+            ...     "--arg2", type=int, help="Help text for arg2", required=True
             ... )
             >>> parser.add_argument("arg3", type=float, default=3.14)
-            >>> parser.add_argument("arg4", type=str, num_args="+")
-            >>> parser.add_argument("arg5", type=str, num_args=2)
+            >>> parser.add_argument("--arg4", type=str, num_args="+")
+            >>> parser.add_argument("--arg5", type=str, num_args=2)
             >>> parser.add_argument("arg6", type=str, choices=["a", "b", "c"])
-            >>> parser.parse()
+            >>> args = parser.parse([
+            ...     "--arg2",
+            ...     "42",
+            ...     "2.71",  # arg3
+            ...     "--arg4",
+            ...     "foo",
+            ...     "bar",
+            ...     "--arg5",
+            ...     "x",
+            ...     "y",
+            ...     "b",  # arg6
+            ...     "--level",
+            ...     "7",
+            ... ])
+            >>> print(args)
+            {
+                "arg2": {"value": 42, "type": int},
+                "arg3": {"value": 2.71, "type": float},
+                "arg4": {"value": ["foo", "bar"], "type": str},
+                "arg5": {"value": ["x", "y"], "type": str},
+                "arg6": {"value": "b", "type": str},
+                "level": {"value": 7, "type": int},
+            }
         """
         self._add_argument_to(
             self._root_group,
@@ -124,12 +179,20 @@ class Parser(AddMixin):
             ArgumentGroup: A new ArgumentGroup instance for the argument group.
 
         Example:
-            parser = ArgumentGroup("my_parser")
-            parser.add_argument("arg1", type=str)
-            group1 = parser.add_argument_group("group1", "Help text for group1")
-            group1.add_argument("arg2", type=bool)
-            group1.add_argument("arg3", type=int)
-            parser.parse()
+            >>> parser = Parser("my_parser")
+            >>> group = parser.add_argument_group(
+            ...     "credentials", "Login credentials"
+            ... )
+            >>> group.add_argument("username", type=str)
+            >>> group.add_argument("password", type=str)
+            >>> result = parser.parse(["user", "secret"])
+            >>> print(result)
+            {
+                "credentials": {
+                    "username": {"value": "user", "type": str},
+                    "password": {"value": "secret", "type": str}
+                }
+            }
         """
         return self._add_argument_group_to(
             self._root_group, name, required=required
@@ -159,36 +222,33 @@ class Parser(AddMixin):
             ArgumentGroup: A new ArgumentGroup instance for the recurring group.
 
         Example:
-            >>> parser = ArgumentGroup("my_parser")
-            >>> parser.add_argument("arg1", type=str)
-            >>> group1 = parser.add_recurring_group(
-            ...     "--group", "Help text for group1"
+            >>> parser = Parser("job_parser")
+            >>> job_group = parser.add_recurring_group(
+            ...     "--job", "Job entry group"
             ... )
-            >>> group1.add_argument("--arg2", type=bool)
-            >>> group1.add_argument("--arg3", type=int)
-            >>> args = parser.parse([
-            ...     "value1",
-            ...     "--group",
-            ...     "--arg2",
-            ...     "true--arg3",
-            ...     "1",
-            ...     "--group",
-            ...     "--arg2",
-            ...     "false",
-            ...     "--arg3",
-            ...     "2",
+            >>> job_group.add_argument("name", type=str)
+            >>> job_group.add_argument("duration", type=int)
+            >>> result = parser.parse([
+            ...     "--job",
+            ...     "name",
+            ...     "build",
+            ...     "duration",
+            ...     "120",
+            ...     "--job",
+            ...     "name",
+            ...     "test",
+            ...     "duration",
+            ...     "30",
             ... ])
-            >>> print(args)
+            >>> print(result)
             {
-                "arg1": {"value": "value1", "type": "str"},
-                "group": [
+                "--job": [
                     {
-                        "arg2": {"value": True, "type": "bool"},
-                        "arg3": {"value": 1, "type": "int"}
+                        "name": {"value": "build", "type": str},
+                        "duration": {"value": 120, "type": int}
                     },
-                    {
-                        "arg2": {"value": False, "type": "bool"},
-                        "arg3": {"value": 2, "type": "int"}
+                    {   "name": {"value": "test", "type": str},
+                        "duration": {"value": 30, "type": int}
                     }
                 ]
             }
@@ -214,6 +274,19 @@ class Parser(AddMixin):
         Returns:
             ArgumentGroup: A new ArgumentGroup instance for the mutually
                 exclusive group.
+
+        Example:
+            >>> parser = Parser("my_parser")
+            >>> mx = parser.add_mutually_exclusive_group("output")
+            >>> mx.add_argument("--json", type=bool)
+            >>> mx.add_argument("--xml", type=bool)
+            >>> result = parser.parse(["--json", "true"])
+            >>> print(result)
+            {
+                "output": {
+                    "--json": {"value": True, "type": bool}
+                }
+            }
         """
         return self._add_mutually_exclusive_group_to(
             self._root_group, name, help, required=required
@@ -239,7 +312,30 @@ class Parser(AddMixin):
         Returns:
             ArgumentGroup: A new ArgumentGroup instance for the conditional
                 argument group.
-        """
+
+        Example:
+            >>> parser = Parser("my_parser")
+            >>> cond = parser.add_conditional_argument_group(
+            ...     "db",
+            ...     "Database options",
+            ...     conditional_type=ConditionalType.FIRST_PRESENT_REST_REQUIRED,
+            ... )
+            >>> cond.add_argument("--use-db", type=bool)
+            >>> cond.add_argument("--db-name", type=str)
+            >>> result = parser.parse([
+            ...     "--use-db",
+            ...     "true",
+            ...     "--db-name",
+            ...     "my_db",
+            ... ])
+            >>> print(result)
+            {
+                "db": {
+                    "--use-db": {"value": True, "type": bool},
+                    "--db-name": {"value": "my_db", "type": str}
+                }
+            }
+        """  # noqa 501
         return self._add_conditional_group_to(
             self._root_group, conditional_type, name, help
         )
@@ -291,7 +387,7 @@ class Parser(AddMixin):
             >>> print(args)
             >>> {
             ...     "input_file": {"value": "input.txt", "type": str},
-            ...     "verbose": {"value": False, "type": bool},
+            ...     "--verbose": {"value": False, "type": bool},
             ... }
         """  # noqa: DOC502
         result, _ = self._parse_args(self._root_group, args)

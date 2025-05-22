@@ -21,17 +21,6 @@ class ArgumentGroup(AshParser, AddMixin):
     Attributes:
         arguments (list[AshParser]): List of arguments for the argument group.
 
-    Methods:
-        add_argument: Add an argument to the argument group.
-        add_argument_group: Add an argument group to the argument group as a
-            nested group.
-        add_recurring_group: Add an argument group that can be used multiple
-            times to the argument group.
-        add_mutually_exclusive_group: Add a group of mutually exclusive
-            arguments to the argument group.
-        add_conditional_group: Add an argument group to the argument group where
-            arguments can be conditionally required.
-
     Raises:
         ParserError: If the argument group is not valid.
     """
