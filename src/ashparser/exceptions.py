@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .parser import Parser
+    from ashparser.group import ArgumentGroup
 
 __all__ = [
     "ParserError",
@@ -19,10 +19,10 @@ __all__ = [
 class ParserError(Exception):
     """Base exception for all parser-related errors."""
 
-    def __init__(self, msg: str, parser: "Parser"):
+    def __init__(self, msg: str, group: "ArgumentGroup"):
         self.msg = msg
-        self.parser = parser
-        super().__init__(f"{self.parser.name}: {msg}")
+        self.group = group
+        super().__init__(f"{self.group.name}: {msg}")
 
 
 class ArgumentError(Exception):

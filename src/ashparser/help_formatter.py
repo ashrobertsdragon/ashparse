@@ -2,30 +2,29 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ashparser.parser import Parser
-    from ashparser.types_ import Argument, AshParser
+    from ashparser.argument import Argument
+    from ashparser.group import ArgumentGroup
+    from ashparser.types_ import AshParser, ConditionalType
 
 
 class HelpFormatter:
-    """A help formatter for the Parser."""
+    """A help formatter for the ArgumentGroup."""
 
-    def __init__(self, parser: Parser, indent_size: int = 4) -> None:
+    def __init__(self, group: ArgumentGroup, indent_size: int = 4) -> None:
         """Initialize the help formatter.
 
         Args:
-            parser (Parser): The parser to format help for.
+            group (ArgumentGroup): The group to format help for.
             indent_size (int, optional): The size of the indentation.
                 Defaults to 4.
         """
-        self.parser = parser
+        self.group = group
         self.indent_size = indent_size
 
-        self.conditional_symbol_map = {
-            grp: ct.symbol for grp, ct in parser._conditional_groups
-        }
-
         # Dispatch table: group_type → formatting method
-        self.usage_strategies: dict[str, Callable[[Parser, list[str]], str]] = {
+        self.usage_strategies: dict[
+            str, Callable[[ArgumentGroup, list[str]], str]
+        ] = {
             "argument_group": self._usage_none,
             "mutually_exclusive_group": self._usage_parens,
             "recurring_group": self._usage_brackets,
@@ -39,7 +38,7 @@ class HelpFormatter:
             str: The formatted help text.
         """
         lines = [self._format_usage(), ""]
-        lines.extend(self._format_descriptions(self.parser, 0))
+        lines.extend(self._format_descriptions(self.group, 0))
         return "\n".join(lines)
 
     def _format_usage(self) -> str:
@@ -48,9 +47,9 @@ class HelpFormatter:
         Returns:
             str: The formatted usage line.
         """
-        parts = [f"Usage: {self.parser.name.upper()}"]
+        parts = [f"Usage: {self.group.name.upper()}"]
         parts.extend(
-            self._format_argument_usage(arg) for arg in self.parser.arguments
+            self._format_argument_usage(arg) for arg in self.group.arguments
         )
         return " ".join(parts)
 
@@ -66,7 +65,7 @@ class HelpFormatter:
         Returns:
             str: The formatted usage line.
         """
-        if not isinstance(arg, Parser):
+        if not isinstance(arg, ArgumentGroup):
             return self._format_simple_argument_usage(arg)
 
         group_type = self._get_group_type(arg)
@@ -80,17 +79,21 @@ class HelpFormatter:
         parts = [self._format_argument_usage(child) for child in arg.arguments]
         return formatter(arg, parts)
 
-    def _usage_none(self, group: "Parser", parts: list[str]) -> str:
+    def _usage_none(self, group: "ArgumentGroup", parts: list[str]) -> str:
         return " ".join(parts)
 
-    def _usage_parens(self, group: "Parser", parts: list[str]) -> str:
+    def _usage_parens(self, group: "ArgumentGroup", parts: list[str]) -> str:
         return f"({' '.join(parts)})"
 
-    def _usage_brackets(self, group: "Parser", parts: list[str]) -> str:
+    def _usage_brackets(self, group: "ArgumentGroup", parts: list[str]) -> str:
         return f"[{' '.join(parts)}]..."
 
-    def _usage_conditional(self, group: "Parser", parts: list[str]) -> str:
-        symbol = self.conditional_symbol_map.get(group, "")
+    def _usage_conditional(
+        self, group: "ArgumentGroup", parts: list[str]
+    ) -> str:
+        if not isinstance(group.subtype, ConditionalType):
+            raise ValueError(f"Expected ConditionalType, got {group.subtype}")
+        symbol = group.subtype.symbol
         if not parts:
             return f"<{symbol}>"
         first, *rest = parts
@@ -123,7 +126,7 @@ class HelpFormatter:
         )
 
     def _format_descriptions(
-        self, parser: Parser, indent_level: int
+        self, group: ArgumentGroup, indent_level: int
     ) -> list[str]:
         """Generate descriptions for all arguments recursively.
 
@@ -132,8 +135,8 @@ class HelpFormatter:
         """
         lines = []
 
-        for arg in parser.arguments:
-            if not isinstance(arg, Parser):
+        for arg in group.arguments:
+            if not isinstance(arg, ArgumentGroup):
                 lines.extend(
                     self._format_simple_argument_description(arg, indent_level)
                 )
@@ -190,12 +193,12 @@ class HelpFormatter:
         return lines
 
     def _format_group_header(
-        self, group: Parser, indent_level: int, group_type: str
+        self, group: ArgumentGroup, indent_level: int, group_type: str
     ) -> str:
         """Format header for a group.
 
         Args:
-            group (Parser): The group to format.
+            group (ArgumentGroup): The group to format.
             indent_level (int): The indentation level.
             group_type (str): The type of the group.
 
@@ -237,13 +240,13 @@ class HelpFormatter:
             return f"{indent}{signature:<{padding}}{group.help}"
         return f"{indent}{signature}"
 
-    def _get_group_type(self, group: Parser) -> str:
+    def _get_group_type(self, group: ArgumentGroup) -> str:
         """Get the type of a group.
 
         Args:
-            group (Parser): The group to get the type of.
+            group (ArgumentGroup): The group to get the type of.
 
         Returns:
             str: The type of the group.
         """
-        return self.parser._groups_by_type[group]
+        return group.group_type
